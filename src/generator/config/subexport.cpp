@@ -1713,7 +1713,8 @@ void proxyToQuanX(std::vector<Proxy> &nodes, INIReader &ini, std::vector<Ruleset
         std::string &hostname = x.Hostname, &method = x.EncryptMethod, &id = x.UserId, &transproto = x.TransferProtocol,
                 &host = x.Host, &path = x.Path, &password = x.Password, &plugin = x.Plugin, &pluginopts = x.PluginOption
                 , &protocol = x.Protocol, &protoparam = x.ProtocolParam, &obfs = x.OBFS, &obfsparam = x.OBFSParam, &
-                        username = x.Username;
+                        username = x.Username, &flow = x.Flow, &pbk = x.PublicKey, &sid = x.ShortId, &sni = x.ServerName,
+                        &tls = x.TLSStr;
         std::string port = std::to_string(x.Port);
         bool &tlssecure = x.TLSSecure;
 
@@ -1744,7 +1745,7 @@ void proxyToQuanX(std::vector<Proxy> &nodes, INIReader &ini, std::vector<Ruleset
                 } else if (tlssecure)
                     proxyStr += ", obfs=over-tls, obfs-host=" + host;
                 break;
-            case ProxyType::VLESS:
+            case ProxyType::VLESS: {
                 if (method == "auto")
                     method = "none";
                 else
@@ -1754,15 +1755,51 @@ void proxyToQuanX(std::vector<Proxy> &nodes, INIReader &ini, std::vector<Ruleset
                     proxyStr += ", aead=false";
                 if (tlssecure && !tls13.is_undef())
                     proxyStr += ", tls13=" + std::string(tls13 ? "true" : "false");
+
+                const bool is_reality = (tls == "reality") || !pbk.empty();
+
+                // Transport
                 if (transproto == "ws") {
+                    // WebSocket
                     if (tlssecure)
                         proxyStr += ", obfs=wss";
                     else
                         proxyStr += ", obfs=ws";
-                    proxyStr += ", obfs-host=" + host + ", obfs-uri=" + path;
-                } else if (tlssecure)
-                    proxyStr += ", obfs=over-tls, obfs-host=" + host;
+
+                    // obfs-host: Reality prefers SNI; otherwise use ws Host.
+                    std::string obfs_host = (is_reality && !sni.empty()) ? sni : host;
+                    if (!obfs_host.empty())
+                        proxyStr += ", obfs-host=" + obfs_host;
+                    if (!path.empty())
+                        proxyStr += ", obfs-uri=" + path;
+
+                    // Reality parameters for wss
+                    if (tlssecure && is_reality && !pbk.empty()) {
+                        proxyStr += ", reality-base64-pubkey=" + pbk;
+                        if (!sid.empty())
+                            proxyStr += ", reality-hex-shortid=" + sid;
+                    }
+                } else if (tlssecure) {
+                    // TLS / Reality
+                    proxyStr += ", obfs=over-tls";
+
+                    // obfs-host: prefer SNI when present.
+                    std::string obfs_host = !sni.empty() ? sni : host;
+                    if (!obfs_host.empty())
+                        proxyStr += ", obfs-host=" + obfs_host;
+
+                    // Reality parameters
+                    if (is_reality && !pbk.empty()) {
+                        proxyStr += ", reality-base64-pubkey=" + pbk;
+                        if (!sid.empty())
+                            proxyStr += ", reality-hex-shortid=" + sid;
+                    }
+                    // XTLS Vision flow (TCP only, not ws)
+                    if (!flow.empty())
+                        proxyStr += ", vless-flow=" + flow;
+                }
                 break;
+            }
             case ProxyType::Shadowsocks:
                 proxyStr =
                         "shadowsocks = " + hostname + ":" + port + ", method=" + method + ", password=" + password;
