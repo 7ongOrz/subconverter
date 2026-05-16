@@ -211,13 +211,16 @@ void anyTlSConstruct(Proxy &node, const std::string &group, const std::string &r
                      const std::string &sni, tribool udp,
                      tribool tfo, tribool scv,
                      tribool tls13, const std::string &underlying_proxy, uint16_t idleSessionCheckInterval,
-                     uint16_t idleSessionTimeout, uint16_t minIdleSession) {
+                     uint16_t idleSessionTimeout, uint16_t minIdleSession,
+                     const std::string &pbk, const std::string &sid) {
     commonConstruct(node, ProxyType::AnyTLS, group, remarks, host, port, udp, tfo, scv, tls13, underlying_proxy);
     node.Host = trim(host);
     node.Password = password;
     node.AlpnList = AlpnList;
     node.SNI = sni;
     node.Fingerprint = fingerprint;
+    node.PublicKey = pbk;
+    node.ShortId = sid;
     node.IdleSessionCheckInterval = idleSessionCheckInterval;
     node.IdleSessionTimeout = idleSessionTimeout;
     node.MinIdleSession = minIdleSession;
@@ -1568,10 +1571,20 @@ void explodeClash(Node yamlnode, std::vector<Proxy> &nodes) {
                               tribool(), scv, reduceRtt, disableSni, request_timeout, underlying_proxy);
 
                 break;
-            case "anytls"_hash:
+            case "anytls"_hash: {
                 group = ANYTLS_DEFAULT_GROUP;
                 singleproxy["password"] >>= password;
                 singleproxy["sni"] >>= sni;
+                if (singleproxy["reality-opts"].IsDefined()) {
+                    singleproxy["reality-opts"]["public-key"] >>= pbk;
+                    singleproxy["reality-opts"]["short-id"] >>= sid;
+                }
+                uint16_t idleSessionCheckInterval = 30;
+                uint16_t idleSessionTimeout = 30;
+                uint16_t minIdleSession = 0;
+                singleproxy["idle-session-check-interval"] >> idleSessionCheckInterval;
+                singleproxy["idle-session-timeout"] >> idleSessionTimeout;
+                singleproxy["min-idle-session"] >> minIdleSession;
 
                 if (!singleproxy["alpn"].IsNull() && singleproxy["alpn"].size() >= 1) {
                     singleproxy["alpn"][0] >>= alpn;
@@ -1581,11 +1594,13 @@ void explodeClash(Node yamlnode, std::vector<Proxy> &nodes) {
                         alpns.push_back(alpn2);
                     }
                 }
-                singleproxy["fingerprint"] >>= fingerprint;
+                singleproxy["client-fingerprint"] >>= fingerprint;
                 anyTlSConstruct(node, ANYTLS_DEFAULT_GROUP, ps, port, password, server, alpns, fingerprint, sni,
                                 udp,
-                                tribool(), scv, tribool(), underlying_proxy, 30, 30, 0);
+                                tribool(), scv, tribool(), underlying_proxy, idleSessionCheckInterval,
+                                idleSessionTimeout, minIdleSession, pbk, sid);
                 break;
+            }
             case "mieru"_hash:
                 group = MIERU_DEFAULT_GROUP;
                 singleproxy["password"] >>= password;
@@ -2630,11 +2645,10 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes) {
                                     continue;
                             }
                         }
-                        if (!pbk.empty()) {
+                        if (!pbk.empty())
                             tls = "reality";
-                            if (sni.empty())
-                                sni = host;
-                        }
+                        if ((tls == "tls" || tls == "reality") && sni.empty())
+                            sni = host;
                         if (remarks.empty())
                             remarks = server + ":" + port;
                         vlessConstruct(node, XRAY_DEFAULT_GROUP, remarks, server, port, "", id, aead, net, method,
@@ -2741,6 +2755,54 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes) {
 
                         httpConstruct(node, HTTP_DEFAULT_GROUP, remarks, server, port, username, password,
                                       tls == "true", tfo, scv, tls13);
+                        break;
+                    case "anytls"_hash: //quantumult x style anytls link
+                        server = trim(configs[0].substr(0, configs[0].rfind(':')));
+                        port = trim(configs[0].substr(configs[0].rfind(':') + 1));
+                        if (port == "0")
+                            continue;
+
+                        for (i = 1; i < configs.size(); i++) {
+                            std::string item = trim(configs[i]);
+                            std::string::size_type epos = item.find('=');
+                            if (epos == std::string::npos)
+                                continue;
+                            itemName = trim(item.substr(0, epos));
+                            itemVal = trim(item.substr(epos + 1));
+                            switch (hash_(itemName)) {
+                                case "password"_hash:
+                                    password = itemVal;
+                                    break;
+                                case "tag"_hash:
+                                    remarks = itemVal;
+                                    break;
+                                case "tls-host"_hash:
+                                    sni = itemVal;
+                                    break;
+                                case "reality-base64-pubkey"_hash:
+                                    pbk = itemVal;
+                                    break;
+                                case "reality-hex-shortid"_hash:
+                                    sid = itemVal;
+                                    break;
+                                case "udp-relay"_hash:
+                                    udp = itemVal;
+                                    break;
+                                case "fast-open"_hash:
+                                    tfo = itemVal;
+                                    break;
+                                case "tls-verification"_hash:
+                                    scv = itemVal == "false";
+                                    break;
+                                default:
+                                    continue;
+                            }
+                        }
+                        if (remarks.empty())
+                            remarks = server + ":" + port;
+                        anyTlSConstruct(node, ANYTLS_DEFAULT_GROUP, remarks, port, password, server,
+                                        std::vector<std::string>{}, fp, sni, udp, tfo, scv, tls13,
+                                        "", 30, 30, 0, pbk, sid);
                         break;
                     default:
                         continue;
@@ -3021,7 +3083,7 @@ void explodeSingbox(rapidjson::Value &outbounds, std::vector<Proxy> &nodes) {
                                         tfo,
                                         scv, tribool(), underlying_proxy);
                         break;
-                    case "vless"_hash:
+                    case "vless"_hash: {
                         group = XRAY_DEFAULT_GROUP;
                         id = GetMember(singboxNode, "uuid");
                         flow = GetMember(singboxNode, "flow");
@@ -3064,10 +3126,12 @@ void explodeSingbox(rapidjson::Value &outbounds, std::vector<Proxy> &nodes) {
                             }
                         }
 
+                        std::string vlessFingerprint = fingerprint.empty() ? fp : fingerprint;
                         vlessConstruct(node, group, ps, server, port, type, id, aid, net, "auto", flow, mode, path,
-                                       host, "", tls, pbk, sid, fp, sni, alpnList, packet_encoding, encryption,
+                                       host, "", tls, pbk, sid, vlessFingerprint, sni, alpnList, packet_encoding, encryption,
                                        udp, tribool(), tribool(), tribool(), underlying_proxy);
                         break;
+                    }
                     case "http"_hash:
                         password = GetMember(singboxNode, "password");
                         user = GetMember(singboxNode, "username");
@@ -3110,14 +3174,20 @@ void explodeSingbox(rapidjson::Value &outbounds, std::vector<Proxy> &nodes) {
                                           obfsParam, insecure, ports, sni,
                                           udp, tfo, scv, tribool(), underlying_proxy);
                         break;
-                    case "anytls"_hash:
+                    case "anytls"_hash: {
                         group = ANYTLS_DEFAULT_GROUP;
                         password = GetMember(singboxNode, "password");
+                        uint16_t idleSessionCheckInterval = to_int(
+                            GetMember(singboxNode, "idle_session_check_interval"), 30);
+                        uint16_t idleSessionTimeout = to_int(GetMember(singboxNode, "idle_session_timeout"), 30);
+                        uint16_t minIdleSession = to_int(GetMember(singboxNode, "min_idle_session"), 0);
                         anyTlSConstruct(node, ANYTLS_DEFAULT_GROUP, ps, port, password, server, alpnList,
-                                        fingerprint, sni,
+                                        fingerprint, sni.empty() ? host : sni,
                                         udp,
-                                        tribool(), scv, tribool(), underlying_proxy, 30, 30, 0);
+                                        tribool(), scv, tribool(), underlying_proxy, idleSessionCheckInterval,
+                                        idleSessionTimeout, minIdleSession, pbk, sid);
                         break;
+                    }
                     case "hysteria2"_hash:
                         group = HYSTERIA2_DEFAULT_GROUP;
                         password = GetMember(singboxNode, "password");
@@ -3221,7 +3291,7 @@ void explodeTuic(const std::string &tuic, Proxy &node) {
 }
 
 void explodeAnyTLS(std::string anytls, Proxy &node) {
-    std::string add, port, password, remarks, addition, sni, fp;
+    std::string add, port, password, remarks, addition, sni, fp, pbk, sid;
     std::vector<std::string> alpnList;
     tribool udp, tfo, scv;
     anytls = anytls.substr(9);
@@ -3277,9 +3347,11 @@ void explodeAnyTLS(std::string anytls, Proxy &node) {
     udp = getUrlArg(addition, "udp");
     tfo = getUrlArg(addition, "tfo");
     scv = getUrlArg(addition, "insecure");
+    pbk = getUrlArg(addition, "pbk");
+    sid = getUrlArg(addition, "sid");
 
     anyTlSConstruct(node, ANYTLS_DEFAULT_GROUP, remarks, port, password, add, alpnList, fp, sni, udp, tfo, scv,
-                    tribool(), "", 30, 30, 0);
+                    tribool(), "", 30, 30, 0, pbk, sid);
 }
 
 void explode(const std::string &link, Proxy &node) {
