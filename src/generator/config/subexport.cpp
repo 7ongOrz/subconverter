@@ -1819,7 +1819,7 @@ void proxyToQuanX(std::vector<Proxy> &nodes, INIReader &ini, std::vector<Ruleset
                             proxyStr += ", reality-hex-shortid=" + sid;
                     }
                     // XTLS Vision flow (TCP only, not ws)
-                    if (!flow.empty())
+                    if (flow == "xtls-rprx-vision")
                         proxyStr += ", vless-flow=" + flow;
                 }
                 break;

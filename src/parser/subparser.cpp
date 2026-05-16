@@ -2004,7 +2004,7 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes) {
     for (auto &x: proxies) {
         std::string remarks, server, port, method, username, password, sni; //common
         std::string plugin, pluginopts, pluginopts_mode, pluginopts_host, mod_url, mod_md5; //ss
-        std::string id, net, tls, host, edge, path, fp; //v2
+        std::string id, net, tls, host, edge, path, fp, flow, pbk, sid; //v2
         std::string protocol, protoparam; //ssr
         std::string section, ip, ipv6, private_key, public_key, mtu, test_url, client_id, peer, keepalive; //wireguard
         string_array dns_servers;
@@ -2602,6 +2602,16 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes) {
                                 case "obfs-uri"_hash:
                                     path = itemVal;
                                     break;
+                                case "reality-base64-pubkey"_hash:
+                                    pbk = itemVal;
+                                    tls = "reality";
+                                    break;
+                                case "reality-hex-shortid"_hash:
+                                    sid = itemVal;
+                                    break;
+                                case "vless-flow"_hash:
+                                    flow = itemVal;
+                                    break;
                                 case "over-tls"_hash:
                                     tls = itemVal == "true" ? "tls" : "";
                                     break;
@@ -2620,11 +2630,16 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes) {
                                     continue;
                             }
                         }
+                        if (!pbk.empty()) {
+                            tls = "reality";
+                            if (sni.empty())
+                                sni = host;
+                        }
                         if (remarks.empty())
                             remarks = server + ":" + port;
                         vlessConstruct(node, XRAY_DEFAULT_GROUP, remarks, server, port, "", id, aead, net, method,
-                                       "chrome", "", path, host, "",
-                                       tls, "", "", fp, sni, std::vector<std::string>{}, "","", udp, tfo, scv, tls13);
+                                       flow, "", path, host, "",
+                                       tls, pbk, sid, fp, sni, std::vector<std::string>{}, "","", udp, tfo, scv, tls13);
                         break;
                     case "trojan"_hash: //quantumult x style trojan link
                         server = trim(configs[0].substr(0, configs[0].rfind(':')));
