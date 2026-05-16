@@ -34,18 +34,18 @@ jobs:
           echo "image=ghcr.io/${repo}" >> $GITHUB_OUTPUT
 
       - name: Checkout base
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ steps.prep.outputs.image }}
           tags: |
@@ -53,7 +53,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Docker login
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -66,7 +66,7 @@ jobs:
 
       - name: Build and export
         id: build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           platforms: ${{ matrix.platform }}
           context: scripts/
@@ -85,7 +85,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: digest-${{ env.PLATFORM_PAIR }}
           path: /tmp/digests/*
@@ -104,18 +104,18 @@ jobs:
           echo "image=ghcr.io/${repo}" >> $GITHUB_OUTPUT
 
       - name: Download digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: /tmp/digests
           pattern: digest-*
           merge-multiple: true
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ steps.prep.outputs.image }}
           tags: |
@@ -123,7 +123,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Docker login
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
