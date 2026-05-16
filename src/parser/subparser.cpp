@@ -212,7 +212,7 @@ void anyTlSConstruct(Proxy &node, const std::string &group, const std::string &r
                      tribool tfo, tribool scv,
                      tribool tls13, const std::string &underlying_proxy, uint16_t idleSessionCheckInterval,
                      uint16_t idleSessionTimeout, uint16_t minIdleSession,
-                     const std::string &pbk, const std::string &sid) {
+                     const std::string &pbk, const std::string &sid, tribool reuse) {
     commonConstruct(node, ProxyType::AnyTLS, group, remarks, host, port, udp, tfo, scv, tls13, underlying_proxy);
     node.Host = trim(host);
     node.Password = password;
@@ -221,6 +221,7 @@ void anyTlSConstruct(Proxy &node, const std::string &group, const std::string &r
     node.Fingerprint = fingerprint;
     node.PublicKey = pbk;
     node.ShortId = sid;
+    node.Reuse = reuse;
     node.IdleSessionCheckInterval = idleSessionCheckInterval;
     node.IdleSessionTimeout = idleSessionTimeout;
     node.MinIdleSession = minIdleSession;
@@ -2017,17 +2018,17 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes) {
     const std::string proxystr = "(.*?)\\s*=\\s*(.*)";
 
     for (auto &x: proxies) {
-        std::string remarks, server, port, method, username, password, sni; //common
+        std::string remarks, server, port, method, username, password, sni, underlying_proxy; //common
         std::string plugin, pluginopts, pluginopts_mode, pluginopts_host, mod_url, mod_md5; //ss
         std::string id, net, tls, host, edge, path, fp, flow, pbk, sid; //v2
         std::string protocol, protoparam; //ssr
         std::string section, ip, ipv6, private_key, public_key, mtu, test_url, client_id, peer, keepalive; //wireguard
         string_array dns_servers;
         string_multimap wireguard_config;
-        std::string version, aead = "1";
+        std::string version, aead = "1", server_cert_fingerprint_sha256;
         std::string itemName, itemVal, config;
         std::vector<std::string> configs, vArray, headers, header;
-        tribool udp, tfo, scv, tls13;
+        tribool udp, tfo, scv, tls13, reuse;
         Proxy node;
 
         /*
@@ -2354,6 +2355,51 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes) {
 
                 snellConstruct(node, SNELL_DEFAULT_GROUP, remarks, server, port, password, plugin, host,
                                to_int(version, 0), udp, tfo, scv);
+                break;
+            case "anytls"_hash:
+                server = trim(configs[1]);
+                port = trim(configs[2]);
+                if (port == "0")
+                    continue;
+
+                for (i = 3; i < configs.size(); i++) {
+                    std::string item = trim(configs[i]);
+                    std::string::size_type epos = item.find('=');
+                    if (epos == std::string::npos)
+                        continue;
+                    itemName = trim(item.substr(0, epos));
+                    itemVal = trim(item.substr(epos + 1));
+                    switch (hash_(itemName)) {
+                        case "password"_hash:
+                            password = itemVal;
+                            break;
+                        case "sni"_hash:
+                            sni = itemVal;
+                            break;
+                        case "skip-cert-verify"_hash:
+                            scv = itemVal;
+                            break;
+                        case "server-cert-fingerprint-sha256"_hash:
+                            server_cert_fingerprint_sha256 = itemVal;
+                            break;
+                        case "reuse"_hash:
+                            reuse = itemVal;
+                            break;
+                        case "tfo"_hash:
+                            tfo = itemVal;
+                            break;
+                        case "underlying-proxy"_hash:
+                            underlying_proxy = itemVal;
+                            break;
+                        default:
+                            continue;
+                    }
+                }
+
+                anyTlSConstruct(node, ANYTLS_DEFAULT_GROUP, remarks, port, password, server,
+                                std::vector<std::string>{}, "", sni, tribool(), tfo, scv, tribool(),
+                                underlying_proxy, 30, 30, 0, "", "", reuse);
+                node.ServerCertFingerprintSha256 = server_cert_fingerprint_sha256;
                 break;
             case "wireguard"_hash:
                 for (i = 1; i < configs.size(); i++) {

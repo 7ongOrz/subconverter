@@ -127,6 +127,7 @@ struct Proxy {
     String DownMbps;
     String Insecure;
     String Fingerprint;
+    String ServerCertFingerprintSha256;
     String OBFSPassword;
     String GRPCServiceName;
     String GRPCMode;
@@ -139,6 +140,7 @@ struct Proxy {
     uint32_t DownSpeed;
     String SNI;
     tribool ReduceRtt;
+    tribool Reuse;
     String UdpRelayMode = "native";
     uint16_t RequestTimeout = 15000;
     String token;

@@ -1128,6 +1128,22 @@ std::string proxyToSurge(std::vector<Proxy> &nodes, const std::string &base_conf
                 if (!x.Ports.empty())
                     proxy += ",port-hopping=" + x.Ports;
                 break;
+            case ProxyType::AnyTLS:
+                if (surge_ver < 5)
+                    continue;
+                // Surge AnyTLS does not define Reality parameters.
+                if (!x.PublicKey.empty() || !x.ShortId.empty())
+                    continue;
+                proxy = "anytls, " + hostname + ", " + port + ", password=" + password;
+                if (!x.SNI.empty())
+                    proxy += ", sni=" + x.SNI;
+                if (!scv.is_undef())
+                    proxy += ", skip-cert-verify=" + scv.get_str();
+                if (!x.ServerCertFingerprintSha256.empty())
+                    proxy += ", server-cert-fingerprint-sha256=" + x.ServerCertFingerprintSha256;
+                if (!x.Reuse.is_undef())
+                    proxy += ", reuse=" + x.Reuse.get_str();
+                break;
             case ProxyType::WireGuard:
                 if (surge_ver < 4 && surge_ver != -3)
                     continue;
@@ -1156,7 +1172,7 @@ std::string proxyToSurge(std::vector<Proxy> &nodes, const std::string &base_conf
 
         if (!tfo.is_undef())
             proxy += ", tfo=" + tfo.get_str();
-        if (!udp.is_undef())
+        if (!udp.is_undef() && x.Type != ProxyType::AnyTLS)
             proxy += ", udp-relay=" + udp.get_str();
         if (underlying_proxy != "")
             proxy += ", underlying-proxy=" + underlying_proxy;
