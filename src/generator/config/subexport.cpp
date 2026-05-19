@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cctype>
 #include <iostream>
 #include <numeric>
 #include <cmath>
@@ -818,31 +819,45 @@ proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGroupCo
 }
 
 
-void formatterShortId(std::string &input) {
+std::string formatterShortId(std::string input) {
     std::string target = "short-id:";
     size_t startPos = input.find(target);
 
     while (startPos != std::string::npos) {
-        // 查找对应实例的结束位置
-        size_t endPos = input.find("}", startPos);
-
-        if (endPos != std::string::npos) {
-            // 提取原始id
-            std::string originalId = input.substr(startPos + target.length(), endPos - startPos - target.length());
-
-            // 去除原始id中的空格
-            originalId.erase(remove_if(originalId.begin(), originalId.end(), ::isspace), originalId.end());
-
-            // 添加引号
-            std::string modifiedId = " \"" + originalId + "\" ";
-
-            // 替换原始id为修改后的id
-            input.replace(startPos + target.length(), endPos - startPos - target.length(), modifiedId);
+        size_t valueStart = startPos + target.length();
+        while (valueStart < input.size() && input[valueStart] != '\n' && input[valueStart] != '\r' &&
+               std::isspace(static_cast<unsigned char>(input[valueStart]))) {
+            valueStart++;
         }
 
-        // 继续查找下一个实例
-        startPos = input.find(target, startPos + 1);
+        size_t valueEnd = valueStart;
+        while (valueEnd < input.size() && input[valueEnd] != ',' && input[valueEnd] != '}' &&
+               input[valueEnd] != '\n' && input[valueEnd] != '\r') {
+            valueEnd++;
+        }
+
+        std::string shortId = trim(input.substr(valueStart, valueEnd - valueStart));
+        if (shortId.size() < 2 || !((shortId.front() == '"' && shortId.back() == '"') ||
+                                    (shortId.front() == '\'' && shortId.back() == '\''))) {
+            shortId.erase(std::remove_if(shortId.begin(), shortId.end(), [](unsigned char c) {
+                return std::isspace(c);
+            }), shortId.end());
+            std::string quotedShortId = "\"" + shortId + "\"";
+            input.replace(valueStart, valueEnd - valueStart, quotedShortId);
+            startPos = valueStart + quotedShortId.size();
+        } else {
+            startPos = valueEnd;
+        }
+
+        startPos = input.find(target, startPos);
     }
+    return input;
+}
+
+std::string dumpClashYaml(const YAML::Node &yamlnode) {
+    std::string output = YAML::Dump(yamlnode);
+    replaceAll(output, "!<str> ", "");
+    return formatterShortId(std::move(output));
 }
 
 std::string proxyToClash(std::vector<Proxy> &nodes, const std::string &base_conf,
@@ -861,7 +876,7 @@ std::string proxyToClash(std::vector<Proxy> &nodes, const std::string &base_conf
     proxyToClash(nodes, yamlnode, extra_proxy_group, clashR, ext);
 
     if (ext.nodelist)
-        return YAML::Dump(yamlnode);
+        return dumpClashYaml(yamlnode);
 
     /*
     if(ext.enable_rule_generator)
@@ -870,7 +885,7 @@ std::string proxyToClash(std::vector<Proxy> &nodes, const std::string &base_conf
     return YAML::Dump(yamlnode);
     */
     if (!ext.enable_rule_generator)
-        return YAML::Dump(yamlnode);
+        return dumpClashYaml(yamlnode);
 
     if (!ext.managed_config_prefix.empty() || ext.clash_script) {
         if (yamlnode["mode"].IsDefined()) {
@@ -882,17 +897,15 @@ std::string proxyToClash(std::vector<Proxy> &nodes, const std::string &base_conf
 
         renderClashScript(yamlnode, ruleset_content_array, ext.managed_config_prefix, ext.clash_script,
                           ext.overwrite_original_rules, ext.clash_classical_ruleset);
-        return YAML::Dump(yamlnode);
+        return dumpClashYaml(yamlnode);
     }
 
     std::string output_content = rulesetToClashStr(yamlnode, ruleset_content_array, ext.overwrite_original_rules,
                                                    ext.clash_new_field_name);
-    std::string yamlnode_str = YAML::Dump(yamlnode);
+    std::string yamlnode_str = dumpClashYaml(yamlnode);
     output_content.insert(0, yamlnode_str);
     //rulesetToClash(yamlnode, ruleset_content_array, ext.overwrite_original_rules, ext.clash_new_field_name);
     //std::string output_content = YAML::Dump(yamlnode);
-    replaceAll(output_content, "!<str> ", "");
-    formatterShortId(output_content);
     return output_content;
 }
 
