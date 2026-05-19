@@ -5,7 +5,9 @@ import logging
 import os
 import shutil
 import stat
-from git import InvalidGitRepositoryError, Repo
+import time
+from typing import Optional
+from git import GitCommandError, InvalidGitRepositoryError, Repo
 
 
 def del_rw(action, name: str, exc):
@@ -20,6 +22,25 @@ def open_repo(path: str):
         return Repo(path)
     except InvalidGitRepositoryError:
         return None
+
+
+def clone_repo(url: str, repo_path: str, branch: Optional[str], commit: Optional[str]):
+    clone_args = {}
+    if commit is None:
+        clone_args["depth"] = 1
+        if branch is not None:
+            clone_args["branch"] = branch
+            clone_args["single_branch"] = True
+
+    for attempt in range(1, 4):
+        try:
+            return Repo.clone_from(url, repo_path, **clone_args)
+        except GitCommandError as e:
+            if attempt == 3:
+                raise
+            logging.warning(f"clone failed, retrying ({attempt}/3): {e}")
+            shutil.rmtree(repo_path, ignore_errors=True, onerror=del_rw)
+            time.sleep(2)
 
 
 def update_rules(repo_path: str, save_path: str, matches: list[str], keep_tree: bool):
@@ -67,7 +88,7 @@ def main():
         r = open_repo(repo_path)
         if r is None:
             logging.info(f"cloning repo {url} to {repo_path}")
-            r = Repo.clone_from(url, repo_path)
+            r = clone_repo(url, repo_path, branch, commit)
         else:
             logging.info(f"repo {repo_path} exists")
             
