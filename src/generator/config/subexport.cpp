@@ -47,6 +47,36 @@ bool isNumeric(const std::string &str) {
     return true;
 }
 
+static bool flagEnabled(const tribool &flag) {
+    return !flag.is_undef() && flag.get();
+}
+
+static bool surgeSupportsUdpRelay(ProxyType type) {
+    switch (type) {
+        case ProxyType::Shadowsocks:
+        case ProxyType::SOCKS5:
+        case ProxyType::Trojan:
+        case ProxyType::Snell:
+        case ProxyType::WireGuard:
+        case ProxyType::Hysteria2:
+        case ProxyType::TUIC:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static bool quanXSupportsFastOpen(const Proxy &proxy) {
+    if (proxy.Type == ProxyType::AnyTLS)
+        return false;
+    if ((proxy.Type == ProxyType::VLESS || proxy.Type == ProxyType::VMess || proxy.Type == ProxyType::Trojan ||
+         proxy.Type == ProxyType::HTTP || proxy.Type == ProxyType::HTTPS || proxy.Type == ProxyType::SOCKS5 ||
+         proxy.Type == ProxyType::Shadowsocks) &&
+        (!proxy.PublicKey.empty() || !proxy.ShortId.empty()))
+        return false;
+    return true;
+}
+
 
 std::string
 vmessLinkConstruct(const std::string &remarks, const std::string &add, const std::string &port, const std::string &type,
@@ -496,7 +526,7 @@ proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGroupCo
                 if (!x.Ports.empty()) {
                     singleproxy["ports"] = x.Ports;
                 }
-                if (!tfo.is_undef()) {
+                if (flagEnabled(tfo)) {
                     singleproxy["fast-open"] = tfo.get();
                 }
                 if (!x.FakeType.empty())
@@ -629,7 +659,7 @@ proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGroupCo
                         singleproxy["alpn"].push_back(item);
                     }
                 }
-                if (!tfo.is_undef())
+                if (flagEnabled(tfo))
                     singleproxy["tfo"] = tfo.get();
                 if (xudp && udp)
                     singleproxy["xudp"] = true;
@@ -1183,9 +1213,9 @@ std::string proxyToSurge(std::vector<Proxy> &nodes, const std::string &base_conf
                 continue;
         }
 
-        if (!tfo.is_undef())
-            proxy += ", tfo=" + tfo.get_str();
-        if (!udp.is_undef() && x.Type != ProxyType::AnyTLS)
+        if (flagEnabled(tfo))
+            proxy += ", tfo=true";
+        if (!udp.is_undef() && surgeSupportsUdpRelay(x.Type))
             proxy += ", udp-relay=" + udp.get_str();
         if (underlying_proxy != "")
             proxy += ", underlying-proxy=" + underlying_proxy;
@@ -1962,7 +1992,7 @@ void proxyToQuanX(std::vector<Proxy> &nodes, INIReader &ini, std::vector<Ruleset
             default:
                 continue;
         }
-        if (!tfo.is_undef())
+        if (!tfo.is_undef() && quanXSupportsFastOpen(x))
             proxyStr += ", fast-open=" + tfo.get_str();
         if (!udp.is_undef())
             proxyStr += ", udp-relay=" + udp.get_str();
@@ -3095,7 +3125,7 @@ proxyToSingBox(std::vector<Proxy> &nodes, rapidjson::Document &json,
         if (!udp.is_undef() && !udp) {
             proxy.AddMember("network", "tcp", allocator);
         }
-        if (!tfo.is_undef()) {
+        if (flagEnabled(tfo)) {
             proxy.AddMember("tcp_fast_open", buildBooleanValue(tfo), allocator);
         }
         nodelist.push_back(x);
