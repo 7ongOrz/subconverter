@@ -1955,7 +1955,7 @@ void explodeStdVless(std::string vless, Proxy &node) {
             break;
         case "xhttp"_hash:
             type = getUrlArg(addition, "headerType");
-            host = getUrlArg(addition, strFind(addition, "sni") ? "sni" : "host");
+            host = getUrlArg(addition, "host");
             path = getUrlArg(addition, "path");
             readXHTTPExtraOptions(addition, node);
             for (const auto &key: xhttp_option_keys) {

@@ -107,6 +107,47 @@ YAML::Node yamlScalarFromString(const std::string &value) {
     return node;
 }
 
+static std::string xhttpJsonOptionKey(const std::string &key) {
+    std::string result;
+    bool uppercase = false;
+    for (char c: key) {
+        if (c == '-') {
+            uppercase = true;
+        } else {
+            result += uppercase ? static_cast<char>(std::toupper(static_cast<unsigned char>(c))) : c;
+            uppercase = false;
+        }
+    }
+    result = replaceAllDistinct(result, "Grpc", "GRPC");
+    result = replaceAllDistinct(result, "Http", "HTTP");
+    return replaceAllDistinct(result, "Sse", "SSE");
+}
+
+static std::string xhttpExtraJson(const StringMap &options) {
+    rapidjson::StringBuffer buffer;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+    bool has_options = false;
+
+    writer.StartObject();
+    for (const auto &[key, value]: options) {
+        if (key == "mode")
+            continue;
+
+        has_options = true;
+        writer.Key(xhttpJsonOptionKey(key).c_str());
+        if ((key == "no-grpc-header" || key == "no-sse-header" || key == "x-padding-obfs-mode") &&
+            (value == "true" || value == "false")) {
+            writer.Bool(value == "true");
+        } else if (key == "sc-max-buffered-posts" && isIntegerString(value)) {
+            writer.Int64(std::stoll(value));
+        } else {
+            writer.String(value.c_str());
+        }
+    }
+    writer.EndObject();
+    return has_options ? buffer.GetString() : "";
+}
+
 std::string
 vmessLinkConstruct(const std::string &remarks, const std::string &add, const std::string &port, const std::string &type,
                    const std::string &id, const std::string &aid, const std::string &net, const std::string &path,
@@ -1473,6 +1514,18 @@ std::string proxyToSingle(std::vector<Proxy> &nodes, int types, extra_settings &
                             }
                             proxyStr += "&path=" + urlEncode(path.empty() ? "/" : path);
                             break;
+                        case "xhttp"_hash: {
+                            if (!host.empty())
+                                proxyStr += "&host=" + urlEncode(host);
+                            proxyStr += "&path=" + urlEncode(path.empty() ? "/" : path);
+                            auto mode = x.XHTTPOptions.find("mode");
+                            if (mode != x.XHTTPOptions.end())
+                                proxyStr += "&mode=" + urlEncode(mode->second);
+                            std::string extra = xhttpExtraJson(x.XHTTPOptions);
+                            if (!extra.empty())
+                                proxyStr += "&extra=" + urlEncode(extra);
+                            break;
+                        }
                         case "grpc"_hash:
                             proxyStr += "&serviceName=" + path;
                             proxyStr += "&mode=" + mode;

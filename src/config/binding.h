@@ -88,7 +88,7 @@ namespace toml
             {
                 const auto& extra_table = toml::find<toml::table>(v, "extra");
                 for(const auto& [k, val] : extra_table)
-                    conf.Extras[k] = toml::format(val);
+                    conf.Extras[k] = val.is_string() ? val.as_string() : toml::format(val);
             }
             return conf;
         }
@@ -227,6 +227,13 @@ namespace INIBinding
                 String type = vArray[1];
 
                 rules_upper_bound = vArray.size();
+                const auto is_group_directive = [](const String &value)
+                {
+                    return startsWith(value, "!!PROVIDER=") || startsWith(value, "!!GROUP=") ||
+                           startsWith(value, "!!GROUPID=") || startsWith(value, "!!INSERT=") ||
+                           startsWith(value, "!!TYPE=") || startsWith(value, "!!PORT=") ||
+                           startsWith(value, "!!SERVER=");
+                };
                 switch(hash_(type))
                 {
                 case "select"_hash:
@@ -254,7 +261,8 @@ namespace INIBinding
                     continue;
                 }
 
-                while(rules_upper_bound > 2 && startsWith(vArray[rules_upper_bound - 1], "!!"))
+                while(rules_upper_bound > 2 && startsWith(vArray[rules_upper_bound - 1], "!!") &&
+                      !is_group_directive(vArray[rules_upper_bound - 1]))
                 {
                     std::string keyval = vArray[rules_upper_bound - 1].substr(2);
                     auto eqpos = keyval.find('=');
@@ -282,7 +290,7 @@ namespace INIBinding
                         conf.UsingProvider.reserve(conf.UsingProvider.size() + list.size());
                         std::move(list.begin(), list.end(), std::back_inserter(conf.UsingProvider));
                     }
-                    else if(startsWith(vArray[i], "!!"))
+                    else if(startsWith(vArray[i], "!!") && !is_group_directive(vArray[i]))
                     {
                         std::string keyval = vArray[i].substr(2);
                         auto eqpos = keyval.find('=');
