@@ -77,6 +77,35 @@ static bool quanXSupportsFastOpen(const Proxy &proxy) {
     return true;
 }
 
+bool isIntegerString(const std::string &str) {
+    if (str.empty())
+        return false;
+
+    size_t start = str[0] == '-' ? 1 : 0;
+    if (start == str.size())
+        return false;
+
+    for (size_t i = start; i < str.size(); i++) {
+        if (!std::isdigit(static_cast<unsigned char>(str[i]))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+YAML::Node yamlScalarFromString(const std::string &value) {
+    YAML::Node node;
+    if (value == "true") {
+        node = true;
+    } else if (value == "false") {
+        node = false;
+    } else if (isIntegerString(value)) {
+        node = to_int(value);
+    } else {
+        node = value;
+    }
+    return node;
+}
 
 std::string
 vmessLinkConstruct(const std::string &remarks, const std::string &add, const std::string &port, const std::string &type,
@@ -489,8 +518,6 @@ proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGroupCo
                 }
                 break;
             case ProxyType::Snell:
-                if (x.SnellVersion >= 4)
-                    continue;
                 singleproxy["type"] = "snell";
                 singleproxy["psk"] = x.Password;
                 if (x.SnellVersion != 0)
@@ -732,6 +759,17 @@ proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGroupCo
                         if (!x.Host.empty())
                             singleproxy["h2-opts"]["host"].push_back(x.Host);
                         break;
+                    case "xhttp"_hash:
+                        singleproxy["network"] = x.TransferProtocol;
+                        singleproxy["xhttp-opts"]["path"] = x.Path;
+                        if (!x.Host.empty())
+                            singleproxy["xhttp-opts"]["host"] = x.Host;
+                        for (const auto &option: x.XHTTPOptions) {
+                            singleproxy["xhttp-opts"][option.first] = yamlScalarFromString(option.second);
+                        }
+                        if (!x.Edge.empty())
+                            singleproxy["xhttp-opts"]["headers"]["Edge"] = x.Edge;
+                        break;
                     case "grpc"_hash:
                         singleproxy["network"] = x.TransferProtocol;
                         singleproxy["grpc-opts"]["grpc-mode"] = x.GRPCMode;
@@ -745,9 +783,8 @@ proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGroupCo
                 continue;
         }
 
-        // UDP is not supported yet in clash using snell
-        // sees in https://dreamacro.github.io/clash/configuration/outbound.html#snell
-        if (udp && x.Type != ProxyType::Snell && x.Type != ProxyType::TUIC)
+        // Snell UDP is available in mihomo-compatible Snell v3+ nodes.
+        if (udp && (x.Type != ProxyType::Snell || x.SnellVersion >= 3) && x.Type != ProxyType::TUIC)
             singleproxy["udp"] = true;
         if (!clashR && !x.UnderlyingProxy.empty())
             singleproxy["dialer-proxy"] = x.UnderlyingProxy;
@@ -811,6 +848,8 @@ proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGroupCo
         }
         if (!x.DisableUdp.is_undef())
             singlegroup["disable-udp"] = x.DisableUdp.get();
+        for (const auto &[key, value] : x.Extras)
+            singlegroup[key] = yamlScalarFromString(value);
 
         for (const auto &y: x.Proxies)
             groupGenerate(y, nodelist, filtered_nodelist, true, ext);
@@ -1417,7 +1456,7 @@ std::string proxyToSingle(std::vector<Proxy> &nodes, int types, extra_settings &
                     proxyStr += "&packet-encoding=" + packet_encoding;
                 }
                 if (!alpns.empty()) {
-                    proxyStr += "&alpn=" + alpns[0];
+                    proxyStr += "&alpn=" + urlEncode(join(alpns, ","));
                 }
                 if (!sni.empty()) {
                     proxyStr += "&sni=" + sni;
@@ -1842,13 +1881,8 @@ void proxyToQuanX(std::vector<Proxy> &nodes, INIReader &ini, std::vector<Ruleset
                     proxyStr += ", obfs=over-tls, obfs-host=" + host;
                 break;
             case ProxyType::VLESS: {
-                if (method == "auto")
-                    method = "none";
-                else
-                    method = "none";
+                method = "none";
                 proxyStr = "vless = " + hostname + ":" + port + ", method=" + method + ", password=" + id;
-                if (x.AlterId != 0)
-                    proxyStr += ", aead=false";
                 if (tlssecure && !tls13.is_undef())
                     proxyStr += ", tls13=" + std::string(tls13 ? "true" : "false");
 
@@ -1875,6 +1909,12 @@ void proxyToQuanX(std::vector<Proxy> &nodes, INIReader &ini, std::vector<Ruleset
                         if (!sid.empty())
                             proxyStr += ", reality-hex-shortid=" + sid;
                     }
+                } else if (transproto == "http") {
+                    proxyStr += ", obfs=http";
+                    if (!host.empty())
+                        proxyStr += ", obfs-host=" + host;
+                    if (!path.empty())
+                        proxyStr += ", obfs-uri=" + path;
                 } else if (tlssecure) {
                     // TLS / Reality
                     proxyStr += ", obfs=over-tls";
