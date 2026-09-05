@@ -3191,13 +3191,6 @@ void explodeSingbox(rapidjson::Value &outbounds, std::vector<Proxy> &nodes) {
                     if (tlsObj.HasMember("certificate") && tlsObj["certificate"].IsString()) {
                         public_key = tlsObj["certificate"].GetString();
                     }
-                    if (tlsObj.HasMember("certificate_public_key_sha256") &&
-                        tlsObj["certificate_public_key_sha256"].IsArray() && !tlsObj["certificate_public_key_sha256"].Empty()) {
-                        rapidjson::Value certFpArr = tlsObj["certificate_public_key_sha256"].GetArray();
-                        if (certFpArr[0].IsString()) {
-                            fingerprint = certFpArr[0].GetString();
-                        }
-                    }
                     if (tlsObj.HasMember("reality") && tlsObj["reality"].IsObject()) {
                         tls = "reality";
                         rapidjson::Value reality = tlsObj["reality"].GetObject();
@@ -3368,7 +3361,7 @@ void explodeSingbox(rapidjson::Value &outbounds, std::vector<Proxy> &nodes) {
                             obfsPassword = GetMember(obfsOpt, "password");
                         }
                         hysteria2Construct(node, group, ps, server, port, password, host, up, down, alpn,
-                                           obfsParam, obfsPassword, sni, public_key, fingerprint, "", udp, tfo, scv,
+                                           obfsParam, obfsPassword, sni, public_key, "", "", udp, tfo, scv,
                                            underlying_proxy);
                         break;
                     case "tuic"_hash:
